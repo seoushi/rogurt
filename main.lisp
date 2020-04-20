@@ -10,9 +10,6 @@
 ;; D . . . D
 ;; X X D X X
 
-(in-package "rogurt")
-
-
 (defstruct world-room x-coordinate y-coordinate north-room east-room south-room west-room)
 
 (defstruct world grid rooms)
@@ -53,22 +50,61 @@
                     (t 0)))))
         (list x y))))
 
+(defun get-room-at-coordinate (coordinate rooms)
+  (if (not rooms)
+      nil
+      (let* ((room (first rooms))
+             (x (world-room-x-coordinate room))
+             (y (world-room-y-coordinate room))
+             (x2 (first coordinate))
+             (y2 (second coordinate)))
+        (if (and (equalp x x2)
+                 (equalp y y2))
+            room
+            (get-room-at-coordinate coordinate (rest rooms))))))
+
+(defun opposite-direction (direction)
+  (cond
+    ((= direction 0) 2) ;; north -> south
+    ((= direction 1) 3) ;; east ->west
+    ((= direction 2) 0)
+    ((= direction 3) 1)))
+
+(defun add-room (world new-room)
+  (setf (world-rooms world) (append (world-rooms world) new-room)))
+
+(defun connect-rooms (first-room second-room direction) ;; direction is from first->second
+  (set-room-for-direction first-room direction second-room)
+  (set-room-for-direction second-room (opposite-direction direction) first-room))
+
 (defun generate-rooms (world number-of-rooms &optional last-room)
   (if (<= number-of-rooms 0)
       world
       (let* ((direction (random 4))
              (coordinate (get-coordinate-for-next-room last-room direction))
+             (all-rooms (world-rooms world))
              (new-room (make-world-room :x-coordinate (first coordinate)
                                         :y-coordinate (second coordinate)
                                         :north-room nil
                                         :east-room nil
                                         :south-room nil
-                                        :west-room nil)))
-        ;; TODO: need to check if a room already exists at the new-room-coordinate
+                                        :west-room nil))
+             (existing-room (get-room-at-coordinate coordinate all-rooms)))
+        ;; TODO: limit the direction depending on the surrounding rooms
+        ;;  if all the room connects are full. then we need to pick a new room
         (if last-room
-            (set-room-for-direction last-room direction new-room))
-        (setf (world-rooms world) (cons (world-rooms world) new-room))
-        (generate-rooms world (- number-of-rooms 1) new-room))))
+            (if existing-room
+                (progn
+                  (connect-rooms last-room existing-room direction)
+                  (generate-rooms world number-of-rooms existing-room))
+                (progn
+                  (add-room world new-room)
+                  (connect-rooms last-room new-room direction)
+                  (generate-rooms world (- number-of-rooms 1) new-room)))
+            (progn
+              (setf (world-rooms world) (list new-room))
+              (generate-rooms world (- number-of-rooms 1) new-room))))))
+
 
 (defun print-world (world):q
   (let ((grid (world-grid world)))
@@ -92,5 +128,22 @@
 (defun clear-screen()
   (format t "~A[H~@*~A[J" #\escape))
 
+(defun print-room (room)
+  (format t "X:~a, Y:~a - N:~a E:~a S:~a W:~a~%"
+          (world-room-x-coordinate room)
+          (world-room-y-coordinate room)
+          (not (not (world-room-north-room room)))
+          (not (not (world-room-east-room room)))
+          (not (not (world-room-south-room room)))
+          (not (not (world-room-west-room room)))))
+
+(defun print-rooms (rooms)
+  (if rooms
+      (if (listp rooms)
+          (progn
+            (print-room (first rooms))
+            (print-rooms (rest rooms)))
+          (print-room rooms))))
+
 (print-world *world*)
-(format t "~a" (world-rooms *world*))
+(print-rooms (world-rooms *world*))
