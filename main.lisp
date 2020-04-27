@@ -54,14 +54,17 @@
   (if (not rooms)
       nil
       (let* ((room (first rooms))
+             (other-rooms (rest rooms))
              (x (world-room-x-coordinate room))
              (y (world-room-y-coordinate room))
              (x2 (first coordinate))
              (y2 (second coordinate)))
         (if (and (equalp x x2)
                  (equalp y y2))
-            room
-            (get-room-at-coordinate coordinate (rest rooms))))))
+              room
+              (get-room-at-coordinate coordinate other-rooms)))))
+
+
 
 (defun opposite-direction (direction)
   (cond
@@ -71,39 +74,71 @@
     ((= direction 3) 1)))
 
 (defun add-room (world new-room)
-  (setf (world-rooms world) (append (world-rooms world) new-room)))
+  (setf (world-rooms world) (cons new-room (world-rooms world))))
 
 (defun connect-rooms (first-room second-room direction) ;; direction is from first->second
   (set-room-for-direction first-room direction second-room)
   (set-room-for-direction second-room (opposite-direction direction) first-room))
 
-(defun generate-rooms (world number-of-rooms &optional last-room)
-  (if (<= number-of-rooms 0)
-      world
-      (let* ((direction (random 4))
-             (coordinate (get-coordinate-for-next-room last-room direction))
-             (all-rooms (world-rooms world))
-             (new-room (make-world-room :x-coordinate (first coordinate)
-                                        :y-coordinate (second coordinate)
+
+(defun get-free-directions (room)
+  (let ((north-free (not (world-room-north-room room)))
+        (east-free (not (world-room-east-room room)))
+        (south-free (not (world-room-south-room room)))
+        (west-free (not (world-room-west-room room)))
+        (results '()))
+
+    (progn
+      (if north-free
+          (setf results (append results (list 0))))
+      (if east-free
+          (setf results (append results (list 1))))
+      (if south-free
+          (setf results (append results (list 2))))
+      (if west-free
+          (setf results (append results (list 3))))
+      results)))
+
+(defun pick-random-room (world)
+  (let* ((rooms (world-rooms world))
+         (room-count (length rooms))
+         (room-index (random room-count)))
+    (nth room-index rooms)))
+
+
+(defun generate-rooms (world number-of-rooms &optional current-room)
+  (if (> number-of-rooms 0)
+    (if (not current-room)
+        (let ((new-room (make-world-room :x-coordinate 0
+                                        :y-coordinate 0
                                         :north-room nil
                                         :east-room nil
                                         :south-room nil
-                                        :west-room nil))
-             (existing-room (get-room-at-coordinate coordinate all-rooms)))
-        ;; TODO: limit the direction depending on the surrounding rooms
-        ;;  if all the room connects are full. then we need to pick a new room
-        (if last-room
-            (if existing-room
-                (progn
-                  (connect-rooms last-room existing-room direction)
-                  (generate-rooms world number-of-rooms existing-room))
-                (progn
-                  (add-room world new-room)
-                  (connect-rooms last-room new-room direction)
-                  (generate-rooms world (- number-of-rooms 1) new-room)))
-            (progn
-              (setf (world-rooms world) (list new-room))
-              (generate-rooms world (- number-of-rooms 1) new-room))))))
+                                        :west-room nil)))
+          (progn
+            (setf (world-rooms world) (list new-room))
+            (generate-rooms world (- number-of-rooms 1) new-room)))
+        (let* ((directions (get-free-directions current-room))
+              (direction-count (length directions)))
+          (if (equalp direction-count 0)
+              (generate-rooms world number-of-rooms (pick-random-room world))
+              (let* ((direction (nth (random direction-count) directions))
+                    (coordinate (get-coordinate-for-next-room current-room direction))
+                    (new-room (get-room-at-coordinate coordinate (world-rooms world))))
+                (if new-room
+                  (progn
+                    (connect-rooms current-room new-room direction)
+                    (generate-rooms world number-of-rooms new-room))
+                  (let ((new-room (make-world-room :x-coordinate (first coordinate)
+                                                   :y-coordinate (second coordinate)
+                                                   :north-room nil
+                                                   :east-room nil
+                                                   :south-room nil
+                                                   :west-room nil)))
+                    (progn
+                      (add-room world new-room)
+                      (connect-rooms current-room new-room direction)
+                      (generate-rooms world (- number-of-rooms 1) new-room))))))))))
 
 
 (defun print-world (world):q
@@ -121,9 +156,8 @@
                     (+ y start-y))
               :.)))))
 
-
-(generate-rooms *world* 2)
-(make-room *world* 1 1 2 2)
+(generate-rooms *world* 10)
+;(make-room *world* 1 1 2 2)
 
 (defun clear-screen()
   (format t "~A[H~@*~A[J" #\escape))
@@ -147,3 +181,34 @@
 
 (print-world *world*)
 (print-rooms (world-rooms *world*))
+
+(defun get-max-coordinate (rooms &optional max-x max-y)
+  (get-coordinate-helper rooms #'> nil nil))
+
+(defun get-min-coordinate (rooms &optional max-x max-y)
+  (get-coordinate-helper rooms #'< nil nil))
+
+(defun get-coordinate-helper (rooms compare-function x y)
+  (if (not rooms)
+      (list x y)
+      (let* ((room (first rooms))
+             (room-x (world-room-x-coordinate room))
+             (room-y (world-room-y-coordinate room))
+             (new-x x)
+             (new-y y))
+        (if (not x)
+            (setf new-x room-x)
+            (if (funcall compare-function room-x new-x)
+                (setf new-x room-x)))
+        (if (not y)
+            (setf new-y room-y)
+            (if (funcall compare-function room-y new-y)
+                (setf new-y room-y)))
+        (get-coordinate-helper (rest rooms) compare-function new-x new-y))))
+
+(format t "max: ~a min: ~a ~%"
+        (get-max-coordinate (world-rooms *world*))
+        (get-min-coordinate (world-rooms *world*)))
+
+;; TODO: figure out the grid size, there will be an issue with negitive numbers
+;; TODO: write all the rooms to the grid A) rooms as a single coordinate. B) rooms with a size
