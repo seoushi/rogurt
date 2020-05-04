@@ -16,17 +16,13 @@
 
 
 
-(defparameter *world* (make-world :grid (make-array '(5 5))
-                                  :rooms '()))
-
 
 (defun fill-world (world)
   (let ((grid (world-grid world)))
-    (dotimes (y (array-dimension grid 0))
-    (dotimes (x (array-dimension grid 1))
-      (setf (aref grid x y) :#)))))
+    (dotimes (y (array-dimension grid 1))
+    (dotimes (x (array-dimension grid 0))
+      (setf (aref grid y y) :#)))))
 
-(fill-world *world*)
 
 (defun set-room-for-direction (parent-room direction child-room)
   (cond
@@ -141,23 +137,19 @@
                       (generate-rooms world (- number-of-rooms 1) new-room))))))))))
 
 
-(defun print-world (world):q
-  (let ((grid (world-grid world)))
-    (dotimes (y (array-dimension grid 0))
-      (dotimes (x (array-dimension grid 1))
-        (format t "~a " (aref grid x y)))
-      (format t "~%"))))
+(defun print-grid(grid)
+  (dotimes (y (array-dimension grid 1))
+    (dotimes (x (array-dimension grid 0))
+      (format t "~a " (aref grid x y)))
+    (format t "~%")))
 
-(defun make-room (world start-x start-y width height)
-  (let ((grid (world-grid world)))
-    (dotimes (x width)
-      (dotimes (y height)
+(defun make-grid-room (grid character start-x start-y width height)
+    (dotimes (y height)
+      (dotimes (x width)
         (setf (aref grid (+ x start-x)
                     (+ y start-y))
-              :.)))))
+              character))))
 
-(generate-rooms *world* 10)
-;(make-room *world* 1 1 2 2)
 
 (defun clear-screen()
   (format t "~A[H~@*~A[J" #\escape))
@@ -178,9 +170,6 @@
             (print-room (first rooms))
             (print-rooms (rest rooms)))
           (print-room rooms))))
-
-(print-world *world*)
-(print-rooms (world-rooms *world*))
 
 (defun get-max-coordinate (rooms &optional max-x max-y)
   (get-coordinate-helper rooms #'> nil nil))
@@ -206,9 +195,59 @@
                 (setf new-y room-y)))
         (get-coordinate-helper (rest rooms) compare-function new-x new-y))))
 
-(format t "max: ~a min: ~a ~%"
-        (get-max-coordinate (world-rooms *world*))
-        (get-min-coordinate (world-rooms *world*)))
 
-;; TODO: figure out the grid size, there will be an issue with negitive numbers
-;; TODO: write all the rooms to the grid A) rooms as a single coordinate. B) rooms with a size
+(defun get-grid-size (rooms)
+  (let ((min-coord (get-min-coordinate rooms))
+        (max-coord (get-max-coordinate rooms)))
+    (list (+ 1 (- (first max-coord) (first min-coord)))
+          (+ 1 (- (second max-coord) (second min-coord))))))
+
+(defun normalize-rooms (rooms)
+  (let* ((min-coord (get-min-coordinate rooms))
+         (min-x (first min-coord))
+         (min-y (second min-coord)))
+    (map nil #'(lambda (room)
+                       (let ((x (world-room-x-coordinate room))
+                             (y (world-room-y-coordinate room)))
+                         (progn
+                           (setf (world-room-x-coordinate room) (- x min-x))
+                           (setf (world-room-y-coordinate room) (- y min-y)))))
+         rooms)))
+
+
+(defun build-room-grid (rooms x-size y-size)
+  (let* ((grid-size (get-grid-size rooms))
+         (room-size-x (+ 1 x-size))
+         (room-size-y (+ 1 y-size))
+         (x-max (* room-size-x (first grid-size)))
+         (y-max (* room-size-y (second grid-size)))
+         (grid (make-array (list x-max y-max)))
+         (room-index 0))
+    (progn
+      (dotimes (y (array-dimension grid 1))
+        (dotimes (x (array-dimension grid 0))
+          (setf (aref grid x y) :#)))
+      (map nil #'(lambda (room)
+                   (make-grid-room grid
+                                   :.
+                                   (* (world-room-x-coordinate room) room-size-x)
+                                   (* (world-room-y-coordinate room) room-size-y)
+                                   x-size
+                                   y-size)
+                   (setf room-index (+ 1 room-index)))
+           rooms)
+      grid)))
+
+
+
+(defparameter *world* (make-world :grid (make-array '(5 5))
+                                  :rooms '()))
+
+(fill-world *world*)
+(generate-rooms *world* 10)
+(normalize-rooms (world-rooms *world*))
+(print-rooms (world-rooms *world*))
+(print-grid (build-room-grid (world-rooms *world*) 4 3))
+
+;; TODO: connect all the rooms
+;; TODO: draw only a portion of the rooms
