@@ -137,11 +137,14 @@
                       (generate-rooms world (- number-of-rooms 1) new-room))))))))))
 
 
-(defun print-grid(grid)
-  (dotimes (y (array-dimension grid 1))
-    (dotimes (x (array-dimension grid 0))
-      (format t "~a " (aref grid x y)))
-    (format t "~%")))
+(defun print-grid(grid start-x start-y width height)
+  (let ((grid-height (array-dimension grid 1))
+        (grid-width (array-dimension grid 0)))
+    (loop for y from start-y below (min (+ start-y height) grid-height) do
+      (progn
+        (loop for x from start-x below (min (+ start-x width) grid-width) do
+          (format t "~a " (aref grid x y)))
+        (format t "~%")))))
 
 (defun make-grid-room (grid character start-x start-y width height)
     (dotimes (y height)
@@ -199,8 +202,8 @@
 (defun get-grid-size (rooms)
   (let ((min-coord (get-min-coordinate rooms))
         (max-coord (get-max-coordinate rooms)))
-    (list (+ 1 (- (first max-coord) (first min-coord)))
-          (+ 1 (- (second max-coord) (second min-coord))))))
+    (list (+ 2 (- (first max-coord) (first min-coord)))
+          (+ 2 (- (second max-coord) (second min-coord))))))
 
 (defun normalize-rooms (rooms)
   (let* ((min-coord (get-min-coordinate rooms))
@@ -228,13 +231,33 @@
         (dotimes (x (array-dimension grid 0))
           (setf (aref grid x y) :#)))
       (map nil #'(lambda (room)
+                   (let ((center-x (floor (/ x-size 2)))
+                         (center-y (floor (/ y-size 2)))
+                         (start-x (+ 1 (* (world-room-x-coordinate room) room-size-x)))
+                         (start-y (+ 1 (* (world-room-y-coordinate room) room-size-y))))
                    (make-grid-room grid
                                    :.
-                                   (* (world-room-x-coordinate room) room-size-x)
-                                   (* (world-room-y-coordinate room) room-size-y)
+                                   start-x
+                                   start-y
                                    x-size
                                    y-size)
-                   (setf room-index (+ 1 room-index)))
+                     (if (world-room-north-room room)
+                         (setf (aref grid
+                                     (+ start-x center-x)
+                                     (+ start-y room-size-y -1)) :-))
+                     (if (world-room-south-room room)
+                         (setf (aref grid
+                                     (+ start-x center-x)
+                                     (+ start-y -1)) :-))
+                     (if (world-room-east-room room)
+                         (setf (aref grid
+                                     (+ start-x room-size-x -1)
+                                     (+ start-y center-y)) #\|))
+                     (if (world-room-west-room room)
+                         (setf (aref grid
+                                     (+ start-x -1)
+                                     (+ start-y center-y)) #\|))
+                   (setf room-index (+ 1 room-index))))
            rooms)
       grid)))
 
@@ -247,7 +270,9 @@
 (generate-rooms *world* 10)
 (normalize-rooms (world-rooms *world*))
 (print-rooms (world-rooms *world*))
-(print-grid (build-room-grid (world-rooms *world*) 4 3))
+(defparameter *grid* (build-room-grid (world-rooms *world*) 5 3))
+(print-grid *grid* 0 0 20 15)
 
-;; TODO: connect all the rooms
-;; TODO: draw only a portion of the rooms
+;; TODO: Add a player
+;; Pressing wasd will make the player move
+;; the camera should center on the player and follow them
