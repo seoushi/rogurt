@@ -12,16 +12,18 @@
 
 (defstruct world-room x-coordinate y-coordinate north-room east-room south-room west-room)
 
-(defstruct world grid rooms)
+(defstruct grid-item display-character)
+
+(defstruct player x-coordinate y-coordinate)
+
+(defstruct world grid rooms player)
 
 
 
-
-(defun fill-world (world)
-  (let ((grid (world-grid world)))
-    (dotimes (y (array-dimension grid 1))
+(defun fill-grid (grid character)
+  (dotimes (y (array-dimension grid 1))
     (dotimes (x (array-dimension grid 0))
-      (setf (aref grid y y) :#)))))
+      (setf (aref grid x y) character))))
 
 
 (defun set-room-for-direction (parent-room direction child-room)
@@ -137,13 +139,16 @@
                       (generate-rooms world (- number-of-rooms 1) new-room))))))))))
 
 
-(defun print-grid(grid start-x start-y width height)
+(defun print-grid(grid start-x start-y width height grid-items)
   (let ((grid-height (array-dimension grid 1))
         (grid-width (array-dimension grid 0)))
     (loop for y from start-y below (min (+ start-y height) grid-height) do
       (progn
         (loop for x from start-x below (min (+ start-x width) grid-width) do
-          (format t "~a " (aref grid x y)))
+          (let ((grid-item (aref grid-items x y)))
+            (if grid-item
+                (format t "~a " (grid-item-display-character grid-item))
+                (format t "~a " (aref grid x y)))))
         (format t "~%")))))
 
 (defun make-grid-room (grid character start-x start-y width height)
@@ -218,12 +223,10 @@
          rooms)))
 
 
-(defun build-room-grid (rooms x-size y-size)
+(defun build-room-grid (rooms room-width room-height print-room-number)
   (let* ((grid-size (get-grid-size rooms))
-         (room-size-x (+ 1 x-size))
-         (room-size-y (+ 1 y-size))
-         (x-max (* room-size-x (first grid-size)))
-         (y-max (* room-size-y (second grid-size)))
+         (x-max (* (+ room-width 1) (first grid-size)))
+         (y-max (* (+ room-height 1) (second grid-size)))
          (grid (make-array (list x-max y-max)))
          (room-index 0))
     (progn
@@ -231,48 +234,126 @@
         (dotimes (x (array-dimension grid 0))
           (setf (aref grid x y) :#)))
       (map nil #'(lambda (room)
-                   (let ((center-x (floor (/ x-size 2)))
-                         (center-y (floor (/ y-size 2)))
-                         (start-x (+ 1 (* (world-room-x-coordinate room) room-size-x)))
-                         (start-y (+ 1 (* (world-room-y-coordinate room) room-size-y))))
+                   (let* ((room-center (room-get-center room room-width room-height))
+                          (center-x (first room-center))
+                          (center-y (second room-center))
+                          (room-start (room-get-starting-position room room-width room-height))
+                          (start-x (first room-start))
+                          (start-y (second room-start)))
                    (make-grid-room grid
                                    :.
                                    start-x
                                    start-y
-                                   x-size
-                                   y-size)
+                                   room-width
+                                   room-height)
                      (if (world-room-north-room room)
                          (setf (aref grid
                                      (+ start-x center-x)
-                                     (+ start-y room-size-y -1)) :-))
+                                     (+ start-y room-height)) :-))
                      (if (world-room-south-room room)
                          (setf (aref grid
                                      (+ start-x center-x)
                                      (+ start-y -1)) :-))
                      (if (world-room-east-room room)
                          (setf (aref grid
-                                     (+ start-x room-size-x -1)
+                                     (+ start-x room-width)
                                      (+ start-y center-y)) #\|))
                      (if (world-room-west-room room)
                          (setf (aref grid
                                      (+ start-x -1)
                                      (+ start-y center-y)) #\|))
+                     (if print-room-number
+                         (setf (aref grid
+                                     (+ start-x center-x)
+                                     (+ start-y center-y)) room-index))
                    (setf room-index (+ 1 room-index))))
            rooms)
       grid)))
 
 
+(defun room-get-center (room room-size-x room-size-y)
+  (let ((center-x (floor (/ room-size-x 2)))
+        (center-y (floor (/ room-size-y 2))))
+    (list center-x center-y)))
 
-(defparameter *world* (make-world :grid (make-array '(5 5))
-                                  :rooms '()))
+(defun room-get-starting-position (room room-size-x room-size-y)
+  (let ((start-x (+ 1 (* (world-room-x-coordinate room) (+ 1 room-size-x))))
+        (start-y (+ 1 (* (world-room-y-coordinate room) (+ 1 room-size-y)))))
+    (list start-x start-y)))
 
-(fill-world *world*)
-(generate-rooms *world* 10)
-(normalize-rooms (world-rooms *world*))
-(print-rooms (world-rooms *world*))
-(defparameter *grid* (build-room-grid (world-rooms *world*) 5 3))
-(print-grid *grid* 0 0 20 15)
 
-;; TODO: Add a player
-;; Pressing wasd will make the player move
+
+(defun generate-world (number-of-rooms room-width room-height)
+  (let ((world (make-world :grid nil :rooms nil :player (make-player :x-coordinate 0 :y-coordinate 0))))
+    (generate-rooms world number-of-rooms)
+    (normalize-rooms (world-rooms world))
+    (setf (world-grid world) (build-room-grid (world-rooms world) room-width room-height nil))
+    (let* ((first-room (first (world-rooms world)))
+          (room-center (room-get-center first-room room-width room-height))
+          (center-x (first room-center))
+          (center-y (second room-center))
+          (player (world-player world))
+          (room-start (room-get-starting-position first-room room-width room-height))
+          (start-x (first room-start))
+          (start-y (second room-start)))
+      (setf (player-x-coordinate player) (+ start-x center-x))
+      (setf (player-y-coordinate player) (+ start-y center-y)))
+    world))
+
+(defun world-make-grid-items (world)
+  (let* ((grid (world-grid world))
+         (grid-width (array-dimension grid 0))
+         (grid-height (array-dimension grid 1))
+         (grid-items (make-array (list grid-width grid-height)))
+         (player (world-player world))
+         (player-x (player-x-coordinate player))
+         (player-y (player-y-coordinate player)))
+    (fill-grid grid-items nil)
+    (setf (aref grid-items player-x player-y) (make-grid-item :display-character #\@))
+    grid-items))
+
+(defun print-world (world)
+  (let ((grid-items (world-make-grid-items world)))
+    (print-grid (world-grid world) 0 0 40 40 grid-items)))
+
+(defun player-move (player x y)
+  (let ((cur-x (player-x-coordinate player))
+        (cur-y (player-y-coordinate player)))
+    (setf (player-x-coordinate player) (+ cur-x x))
+    (setf (player-y-coordinate player) (+ cur-y y))))
+
+
+(defun run-game ()
+  (let* ((world (generate-world 4 5 3))
+         (player (world-player world))
+         (world-changed T)
+         (is-game-running T))
+    (loop while is-game-running do
+      (if world-changed
+          (progn
+            (print-world world)
+            (format t "~%")
+            (setf world-changed nil)))
+      (case (read-char)
+        (#\w (progn
+               (player-move player 0 -1)
+               (setf world-changed T)))
+        (#\s (progn
+               (player-move player 0 1)
+               (setf world-changed T)))
+        (#\a (progn
+               (player-move player -1 0)
+               (setf world-changed T)))
+        (#\d (progn
+               (player-move player 1 0)
+               (setf world-changed T)))
+        (#\e (setf is-game-running nil))))))
+
+(run-game)
+
+;; TODO:
+;; Make sure the player stays in bounds when moving
+;; Make sure the player can not walk through walls
+;; Make doors grid items
+;; make doors openable by pressing space
 ;; the camera should center on the player and follow them
