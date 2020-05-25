@@ -285,20 +285,28 @@
 ;; make doors openable by pressing space
 ;; the camera should center on the player and follow them
 
-(require :sdl2)
+;;(require :sdl2)
+;;(require :slynk)
+
+(defun update-game (renderer)
+  (print "hi"))
 
 (defun test-game ()
   (sdl2:with-init (:everything)
     (sdl2:with-window (win :title "rogurt" :flags '(:shown))
+      (sdl2:show-window win)
       (sdl2:with-renderer (renderer win :flags '(:accelerated))
         (sdl2:with-event-loop (:method :poll)
           (:keyup (:keysym keysym)
                   (when (sdl2:scancode= (sdl2:scancode-value keysym) :scancode-escape)
                     (sdl2:push-event :quit)))
           (:idle ()
+                 (sdl2:show-window win)
                  (sdl2:render-clear renderer)
+                 (update-game renderer)
                  (sdl2:render-present renderer)
                  (sdl2:delay 16)
                  )
           (:quit ()
                  t))))))
+
