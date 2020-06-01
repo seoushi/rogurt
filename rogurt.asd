@@ -6,7 +6,7 @@
   :license  "LGPL v3"
   :version "0.0.1"
   :serial t
-  :depends-on (#:sdl2 #:slynk)
+  :depends-on (#:sdl2 #:sdl2-image #:slynk)
   :components ((:file "package")
                (:file "rogurt")
                (:file "grid")

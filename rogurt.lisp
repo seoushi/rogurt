@@ -16,7 +16,7 @@
 
 (defstruct player x-coordinate y-coordinate)
 
-(defstruct world grid rooms player)
+(defstruct world grid rooms player textures tile-width tile-height)
 
 
 
@@ -209,7 +209,10 @@
 
 
 (defun generate-world (number-of-rooms room-width room-height)
-  (let ((world (make-world :grid nil :rooms nil :player (make-player :x-coordinate 0 :y-coordinate 0))))
+  (let ((world (make-world :grid nil :rooms nil :player (make-player :x-coordinate 0 :y-coordinate 0)
+                           :textures (make-hash-table)
+                           :tile-width 32
+                           :tile-height 32)))
     (generate-rooms world number-of-rooms)
     (normalize-rooms (world-rooms world))
     (setf (world-grid world) (build-room-grid (world-rooms world) room-width room-height nil))
@@ -234,12 +237,8 @@
          (player-x (player-x-coordinate player))
          (player-y (player-y-coordinate player)))
     (fill-grid grid-items nil)
-    (setf (aref grid-items player-x player-y) (make-grid-item :display-character #\@))
+    (setf (aref grid-items player-x player-y) (make-grid-item :texture-id :player))
     grid-items))
-
-(defun print-world (world)
-  (let ((grid-items (world-make-grid-items world)))
-    (print-grid (world-grid world) 0 0 40 40 grid-items)))
 
 (defun player-move (player x y)
   (let ((cur-x (player-x-coordinate player))
@@ -248,65 +247,77 @@
     (setf (player-y-coordinate player) (+ cur-y y))))
 
 
-(defun run-game ()
+
+
+(defun render-world (&key world renderer)
+  (let ((grid-items (world-make-grid-items world)))
+    (render-grid :renderer renderer :world world :start-x 0 :start-y 0 :width 40 :height 40 :grid-items grid-items)))
+
+
+(defun update-game (&key world renderer)
+  ;; reset color to white
+  (sdl2:set-render-draw-color renderer 255 255 255 255)
+
+  (render-world :world world :renderer renderer)
+
+  ;; set our clear color
+  (sdl2:set-render-draw-color renderer 30 10 30 255)
+      ;;(case (read-char)
+      ;;  (#\w (progn
+      ;;         (player-move player 0 -1)
+      ;;         (setf world-changed T)))
+      ;;  (#\s (progn
+      ;;         (player-move player 0 1)
+      ;;         (setf world-changed T)))
+      ;;  (#\a (progn
+      ;;         (player-move player -1 0)
+      ;;         (setf world-changed T)))
+      ;;  (#\d (progn
+      ;;         (player-move player 1 0)
+      ;;         (setf world-changed T)))
+      ;; (#\e (setf is-game-running nil)))))
+      )
+
+(defun init-game (renderer)
   (let* ((world (generate-world 4 5 3))
-         (player (world-player world))
-         (world-changed T)
-         (is-game-running T))
-    (loop while is-game-running do
-      (if world-changed
-          (progn
-            (print-world world)
-            (format t "HI ~%")
-            (setf world-changed nil)))
-      (case (read-char)
-        (#\w (progn
-               (player-move player 0 -1)
-               (setf world-changed T)))
-        (#\s (progn
-               (player-move player 0 1)
-               (setf world-changed T)))
-        (#\a (progn
-               (player-move player -1 0)
-               (setf world-changed T)))
-        (#\d (progn
-               (player-move player 1 0)
-               (setf world-changed T)))
-        (#\e (setf is-game-running nil))))))
+         (textures (world-textures world))
+         (load-texture (lambda (id filename)
+                         (let ((surface (sdl2-image:load-image filename)))
+                           (setf (gethash id textures) (sdl2:create-texture-from-surface renderer surface))
+                           (sdl2:free-surface surface)))))
+    (funcall load-texture :player "data/textures/player.png")
+    (funcall load-texture :wall "data/textures/wall.png")
+    (funcall load-texture :vertical-door "data/textures/vertical-door.png")
+    (funcall load-texture :horizontal-door "data/textures/horizontal-door.png")
+    (funcall load-texture :floor "data/textures/floor.png")
+    world))
+
+(defun shutdown-game (&key world renderer)
+  (maphash (lambda (texture-key texture-value)
+             (sdl2:destroy-texture texture-value))
+           (world-textures world)))
 
 
-
-;;(run-game)
-
-;; TODO:
-;; Make sure the player stays in bounds when moving
-;; Make sure the player can not walk through walls
-;; Make doors grid items
-;; make doors openable by pressing space
-;; the camera should center on the player and follow them
-
-;;(require :sdl2)
-;;(require :slynk)
-
-(defun update-game (renderer)
-  (print "hi"))
-
-(defun test-game ()
+(defun run-game ()
   (sdl2:with-init (:everything)
-    (sdl2:with-window (win :title "rogurt" :flags '(:shown))
+    (sdl2:with-window (win :title "rogurt" :flags '(:shown) :w 480 :h 320)
       (sdl2:show-window win)
       (sdl2:with-renderer (renderer win :flags '(:accelerated))
-        (sdl2:with-event-loop (:method :poll)
-          (:keyup (:keysym keysym)
-                  (when (sdl2:scancode= (sdl2:scancode-value keysym) :scancode-escape)
-                    (sdl2:push-event :quit)))
-          (:idle ()
-                 (sdl2:show-window win)
-                 (sdl2:render-clear renderer)
-                 (update-game renderer)
-                 (sdl2:render-present renderer)
-                 (sdl2:delay 16)
-                 )
-          (:quit ()
-                 t))))))
-
+        (sdl2-image:init '(:png))
+        (let ((world (init-game renderer)))
+          (sdl2:with-event-loop (:method :poll)
+            (:keyup (:keysym keysym)
+                    (when (sdl2:scancode= (sdl2:scancode-value keysym) :scancode-escape)
+                      (sdl2:push-event :quit)))
+            (:idle ()
+                   (sdl2:show-window win)
+                   (sdl2:render-clear renderer)
+                   (update-game :world world :renderer renderer)
+                   (sdl2:render-present renderer)
+                   (sdl2:delay 16)
+                   (update-slynk)
+                   )
+            (:quit ()
+                   (shutdown-game :world world :renderer renderer)
+                   (sdl2-image:quit)
+                   t)))))))

@@ -1,3 +1,4 @@
+(in-package #:rogurt)
 
 (defmacro continuable (&body body)
   "Allow you to continue in case you have and error in your code"
