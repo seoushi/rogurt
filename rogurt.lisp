@@ -299,7 +299,7 @@
 
 
 (defun run-game ()
-  (sdl2:with-init (:everything)
+  (sdl2:with-init (:video :timer)
     (sdl2:with-window (win :title "rogurt" :flags '(:shown) :w 480 :h 320)
       (sdl2:show-window win)
       (sdl2:with-renderer (renderer win :flags '(:accelerated))
