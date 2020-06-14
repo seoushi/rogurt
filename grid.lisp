@@ -10,7 +10,7 @@
     (dotimes (x (array-dimension grid 0))
       (setf (aref grid x y) character))))
 
-(defun render-grid(&key world renderer start-x start-y width height grid-items)
+(defun render-grid(world renderer x-offset y-offset grid-items)
   (let* ((grid (world-grid world))
          (grid-height (array-dimension grid 1))
          (grid-width (array-dimension grid 0))
@@ -23,17 +23,17 @@
                              (if texture
                                  (sdl2:render-copy renderer texture :dest-rect dest-rect)
                                  (format t "Texture id not found: '~a'~%" texture-id))))))
-    (loop for y from start-y below (min (+ start-y height) grid-height) do
-      (setf (sdl2:rect-x dest-rect) 0)
-      (loop for x from start-x below (min (+ start-x width) grid-width) do
+    (loop for y from 0 below grid-height do
+      (setf (sdl2:rect-x dest-rect) x-offset)
+      (setf (sdl2:rect-y dest-rect) (+ y-offset (* tile-height y)))
+      (loop for x from 0 below grid-width do
         (let* ((grid-item (aref grid-items x y))
                (grid-texture-id (aref grid x y)))
-          (if grid-texture-id
+          (when grid-texture-id
               (funcall render-texture grid-texture-id))
-          (if grid-item
+          (when grid-item
               (funcall render-texture (grid-item-texture-id grid-item)))
-          (setf (sdl2:rect-x dest-rect) (+ tile-width (sdl2:rect-x dest-rect)))))
-      (setf (sdl2:rect-y dest-rect) (+ tile-height (sdl2:rect-y dest-rect))))))
+          (setf (sdl2:rect-x dest-rect) (+ tile-width (sdl2:rect-x dest-rect))))))))
 
 
 (defun make-grid-room (grid character start-x start-y width height)
