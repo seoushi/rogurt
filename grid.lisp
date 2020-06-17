@@ -1,7 +1,8 @@
 (in-package #:rogurt)
 
 
-(defstruct grid-item texture-id)
+(defstruct grid-item
+  (texture-id nil :type symbol))
 
 
 (defun fill-grid (grid character)
@@ -11,6 +12,7 @@
       (setf (aref grid x y) character))))
 
 (defun render-grid(world renderer x-offset y-offset grid-items)
+  "renders the world and all grid items to the screen"
   (let* ((grid (world-grid world))
          (grid-height (array-dimension grid 1))
          (grid-width (array-dimension grid 0))
@@ -37,6 +39,7 @@
 
 
 (defun make-grid-room (grid character start-x start-y width height)
+  "creates a room in the grid"
     (dotimes (y height)
       (dotimes (x width)
         (setf (aref grid (+ x start-x)
@@ -44,6 +47,7 @@
               character))))
 
 (defun get-grid-size (rooms)
+  "calculates the width and height of a grid in coordinate space"
   (let ((min-coord (get-min-coordinate rooms))
         (max-coord (get-max-coordinate rooms)))
     (list (+ 2 (- (first max-coord) (first min-coord)))
@@ -51,12 +55,12 @@
 
 
 (defun build-room-grid (rooms room-width room-height print-room-number)
+  "creates a grid given all the rooms and thier sizes"
   (let* ((grid-size (get-grid-size rooms))
          (x-max (* (+ room-width 1) (first grid-size)))
          (y-max (* (+ room-height 1) (second grid-size)))
          (grid (make-array (list x-max y-max)))
          (room-index 0))
-    (progn
       (dotimes (y (array-dimension grid 1))
         (dotimes (x (array-dimension grid 0))
           (setf (aref grid x y) :wall)))
@@ -73,19 +77,19 @@
                                    start-y
                                    room-width
                                    room-height)
-                     (if (world-room-north-room room)
+                     (if (room-north-room room)
                          (setf (aref grid
                                      (+ start-x center-x)
                                      (+ start-y room-height)) :horizontal-door))
-                     (if (world-room-south-room room)
+                     (if (room-south-room room)
                          (setf (aref grid
                                      (+ start-x center-x)
                                      (+ start-y -1)) :horizontal-door))
-                     (if (world-room-east-room room)
+                     (if (room-east-room room)
                          (setf (aref grid
                                      (+ start-x room-width)
                                      (+ start-y center-y)) :vertical-door))
-                     (if (world-room-west-room room)
+                     (if (room-west-room room)
                          (setf (aref grid
                                      (+ start-x -1)
                                      (+ start-y center-y)) :vertical-door))
@@ -95,4 +99,4 @@
                                      (+ start-y center-y)) room-index))
                    (setf room-index (+ 1 room-index))))
            rooms)
-      grid)))
+      grid))

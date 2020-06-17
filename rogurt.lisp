@@ -1,234 +1,51 @@
 (in-package #:rogurt)
 
-;; World is a grid like this
-;; X X X X X
-;; X X X X X
-;; X X X X X
-;; X X X X X
-;; X X X X X
+(defstruct player
+  (x-coordinate 0 :type integer)
+  (y-coordinate 0 :type integer))
 
-;; Room is a object with 4 possible exits or connections to other rooms
-;; X X D X X
-;; D . . . D
-;; X X D X X
-
-(defstruct world-room x-coordinate y-coordinate north-room east-room south-room west-room)
-
-(defstruct player x-coordinate y-coordinate)
-
-(defstruct world grid rooms player textures tile-width tile-height)
-
-
-
-
-
-(defun set-room-for-direction (parent-room direction child-room)
-  (cond
-    ((= direction 0) (setf (world-room-north-room parent-room) child-room))
-    ((= direction 1) (setf (world-room-east-room parent-room) child-room))
-    ((= direction 2) (setf (world-room-south-room parent-room) child-room))
-    ((= direction 3) (setf (world-room-west-room parent-room) child-room))))
-
-(defun get-coordinate-for-next-room (room direction)
-  (if (not room)
-      '(0 0)
-      (let ((x (+ (world-room-x-coordinate room)
-                  (cond
-                    ((= direction 1) 1)
-                    ((= direction 3) -1)
-                    (t 0))))
-            (y (+ (world-room-y-coordinate room)
-                  (cond
-                    ((= direction 2) -1)
-                    ((= direction 0) 1)
-                    (t 0)))))
-        (list x y))))
-
-(defun get-room-at-coordinate (coordinate rooms)
-  (if (not rooms)
-      nil
-      (let* ((room (first rooms))
-             (other-rooms (rest rooms))
-             (x (world-room-x-coordinate room))
-             (y (world-room-y-coordinate room))
-             (x2 (first coordinate))
-             (y2 (second coordinate)))
-        (if (and (equalp x x2)
-                 (equalp y y2))
-              room
-              (get-room-at-coordinate coordinate other-rooms)))))
-
+(defstruct world
+  (grid nil :type array)
+  (rooms nil :type list)
+  (player nil :type player)
+  (textures nil :type hash-table)
+  (tile-width nil :type integer)
+  (tile-height nil :type integer))
 
 
 (defun opposite-direction (direction)
+  "gets the opposite direction of the given direction"
   (cond
-    ((= direction 0) 2) ;; north -> south
-    ((= direction 1) 3) ;; east ->west
-    ((= direction 2) 0)
-    ((= direction 3) 1)))
-
-(defun add-room (world new-room)
-  (setf (world-rooms world) (cons new-room (world-rooms world))))
-
-(defun connect-rooms (first-room second-room direction) ;; direction is from first->second
-  (set-room-for-direction first-room direction second-room)
-  (set-room-for-direction second-room (opposite-direction direction) first-room))
-
-
-(defun get-free-directions (room)
-  (let ((north-free (not (world-room-north-room room)))
-        (east-free (not (world-room-east-room room)))
-        (south-free (not (world-room-south-room room)))
-        (west-free (not (world-room-west-room room)))
-        (results '()))
-
-    (progn
-      (if north-free
-          (setf results (append results (list 0))))
-      (if east-free
-          (setf results (append results (list 1))))
-      (if south-free
-          (setf results (append results (list 2))))
-      (if west-free
-          (setf results (append results (list 3))))
-      results)))
-
-(defun pick-random-room (world)
-  (let* ((rooms (world-rooms world))
-         (room-count (length rooms))
-         (room-index (random room-count)))
-    (nth room-index rooms)))
-
-
-(defun generate-rooms (world number-of-rooms &optional current-room)
-  (if (> number-of-rooms 0)
-    (if (not current-room)
-        (let ((new-room (make-world-room :x-coordinate 0
-                                        :y-coordinate 0
-                                        :north-room nil
-                                        :east-room nil
-                                        :south-room nil
-                                        :west-room nil)))
-          (progn
-            (setf (world-rooms world) (list new-room))
-            (generate-rooms world (- number-of-rooms 1) new-room)))
-        (let* ((directions (get-free-directions current-room))
-              (direction-count (length directions)))
-          (if (equalp direction-count 0)
-              (generate-rooms world number-of-rooms (pick-random-room world))
-              (let* ((direction (nth (random direction-count) directions))
-                    (coordinate (get-coordinate-for-next-room current-room direction))
-                    (new-room (get-room-at-coordinate coordinate (world-rooms world))))
-                (if new-room
-                  (progn
-                    (connect-rooms current-room new-room direction)
-                    (generate-rooms world number-of-rooms new-room))
-                  (let ((new-room (make-world-room :x-coordinate (first coordinate)
-                                                   :y-coordinate (second coordinate)
-                                                   :north-room nil
-                                                   :east-room nil
-                                                   :south-room nil
-                                                   :west-room nil)))
-                    (progn
-                      (add-room world new-room)
-                      (connect-rooms current-room new-room direction)
-                      (generate-rooms world (- number-of-rooms 1) new-room))))))))))
-
-
-
-
-
-(defun print-room (room)
-  (format t "X:~a, Y:~a - N:~a E:~a S:~a W:~a~%"
-          (world-room-x-coordinate room)
-          (world-room-y-coordinate room)
-          (not (not (world-room-north-room room)))
-          (not (not (world-room-east-room room)))
-          (not (not (world-room-south-room room)))
-          (not (not (world-room-west-room room)))))
-
-(defun print-rooms (rooms)
-  (if rooms
-      (if (listp rooms)
-          (progn
-            (print-room (first rooms))
-            (print-rooms (rest rooms)))
-          (print-room rooms))))
-
-(defun get-max-coordinate (rooms &optional max-x max-y)
-  (get-coordinate-helper rooms #'> nil nil))
-
-(defun get-min-coordinate (rooms &optional max-x max-y)
-  (get-coordinate-helper rooms #'< nil nil))
-
-(defun get-coordinate-helper (rooms compare-function x y)
-  (if (not rooms)
-      (list x y)
-      (let* ((room (first rooms))
-             (room-x (world-room-x-coordinate room))
-             (room-y (world-room-y-coordinate room))
-             (new-x x)
-             (new-y y))
-        (if (not x)
-            (setf new-x room-x)
-            (if (funcall compare-function room-x new-x)
-                (setf new-x room-x)))
-        (if (not y)
-            (setf new-y room-y)
-            (if (funcall compare-function room-y new-y)
-                (setf new-y room-y)))
-        (get-coordinate-helper (rest rooms) compare-function new-x new-y))))
-
-
-
-(defun normalize-rooms (rooms)
-  (let* ((min-coord (get-min-coordinate rooms))
-         (min-x (first min-coord))
-         (min-y (second min-coord)))
-    (map nil #'(lambda (room)
-                       (let ((x (world-room-x-coordinate room))
-                             (y (world-room-y-coordinate room)))
-                         (progn
-                           (setf (world-room-x-coordinate room) (- x min-x))
-                           (setf (world-room-y-coordinate room) (- y min-y)))))
-         rooms)))
-
-
-
-
-(defun room-get-center (room room-size-x room-size-y)
-  (let ((center-x (floor (/ room-size-x 2)))
-        (center-y (floor (/ room-size-y 2))))
-    (list center-x center-y)))
-
-(defun room-get-starting-position (room room-size-x room-size-y)
-  (let ((start-x (+ 1 (* (world-room-x-coordinate room) (+ 1 room-size-x))))
-        (start-y (+ 1 (* (world-room-y-coordinate room) (+ 1 room-size-y)))))
-    (list start-x start-y)))
-
+    ((eq direction :north) :south)
+    ((eq direction :east)  :west)
+    ((eq direction :south) :north)
+    ((eq direction :west)  :east)))
 
 
 (defun generate-world (number-of-rooms room-width room-height)
-  (let ((world (make-world :grid nil :rooms nil :player (make-player :x-coordinate 0 :y-coordinate 0)
-                           :textures (make-hash-table)
-                           :tile-width 32
-                           :tile-height 32)))
-    (generate-rooms world number-of-rooms)
-    (normalize-rooms (world-rooms world))
-    (setf (world-grid world) (build-room-grid (world-rooms world) room-width room-height nil))
-    (let* ((first-room (first (world-rooms world)))
-          (room-center (room-get-center first-room room-width room-height))
-          (center-x (first room-center))
-          (center-y (second room-center))
-          (player (world-player world))
-          (room-start (room-get-starting-position first-room room-width room-height))
-          (start-x (first room-start))
-          (start-y (second room-start)))
-      (setf (player-x-coordinate player) (+ start-x center-x))
-      (setf (player-y-coordinate player) (+ start-y center-y)))
+  "generates a world"
+  (let* ((rooms (normalize-rooms (generate-rooms number-of-rooms)))
+         (grid (build-room-grid rooms room-width room-height nil))
+         (world (make-world :grid grid
+                            :rooms rooms
+                            :player (make-player :x-coordinate 0 :y-coordinate 0)
+                            :textures (make-hash-table)
+                            :tile-width 32
+                            :tile-height 32))
+         (first-room (first (world-rooms world)))
+         (room-center (room-get-center first-room room-width room-height))
+         (center-x (first room-center))
+         (center-y (second room-center))
+         (player (world-player world))
+         (room-start (room-get-starting-position first-room room-width room-height))
+         (start-x (first room-start))
+         (start-y (second room-start)))
+    (setf (player-x-coordinate player) (+ start-x center-x))
+    (setf (player-y-coordinate player) (+ start-y center-y))
     world))
 
 (defun world-make-grid-items (world)
+  "makes all grid items for the world"
   (let* ((grid (world-grid world))
          (grid-width (array-dimension grid 0))
          (grid-height (array-dimension grid 1))
@@ -241,6 +58,7 @@
     grid-items))
 
 (defun player-move (player x y)
+  "moves the player by x and y on the grid"
   (let ((cur-x (player-x-coordinate player))
         (cur-y (player-y-coordinate player)))
     (setf (player-x-coordinate player) (+ cur-x x))
@@ -250,6 +68,7 @@
 
 
 (defun render-world (world renderer x-offset y-offset)
+  "renders the world to the screen with an offset in pixels"
   (let ((grid-items (world-make-grid-items world)))
     (render-grid world renderer x-offset y-offset grid-items)))
 
@@ -268,6 +87,7 @@
   (sdl2:set-render-draw-color renderer 30 10 30 255))
 
 (defun init-game (renderer)
+  "initializes the game state"
   (let* ((world (generate-world 4 5 3))
          (textures (world-textures world))
          (load-texture (lambda (id filename)
@@ -282,11 +102,13 @@
     world))
 
 (defun shutdown-game (&key world renderer)
+  "cleans up the game state"
   (maphash (lambda (texture-key texture-value)
              (sdl2:destroy-texture texture-value))
            (world-textures world)))
 
 (defun key-pressed (world scancode)
+  "handles key input"
   (let ((player (world-player world)))
     (cond
           ((sdl2:scancode= scancode :scancode-escape) (sdl2:push-event :quit))
@@ -296,6 +118,7 @@
           ((sdl2:scancode= scancode :scancode-d) (player-move player 1 0)))))
 
 (defun run-game ()
+  "main entry point to run/play the game"
   (sdl2:with-init (:video :timer)
     (let ((screen-width 480)
           (screen-height 320))

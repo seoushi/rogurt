@@ -9,5 +9,6 @@
   :depends-on (#:sdl2 #:sdl2-image #:slynk)
   :components ((:file "package")
                (:file "rogurt")
+               (:file "room")
                (:file "grid")
                (:file "slynk")))
