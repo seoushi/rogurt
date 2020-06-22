@@ -6,11 +6,16 @@
 
 (defstruct world
   (grid nil :type array)
+  (grid-items nil :type array)
   (rooms nil :type list)
   (player nil :type player)
   (textures nil :type hash-table)
   (tile-width nil :type integer)
   (tile-height nil :type integer))
+
+(defstruct grid-info
+  (grid-type nil :type symbol)
+  (grid-items nil :type list))
 
 
 (defun opposite-direction (direction)
@@ -26,9 +31,12 @@
   "generates a world"
   (let* ((rooms (normalize-rooms (generate-rooms number-of-rooms)))
          (grid (build-room-grid rooms room-width room-height nil))
+         (player (make-player :x-coordinate 0 :y-coordinate 0))
+         (grid-items (world-make-grid-items grid player))
          (world (make-world :grid grid
+                            :grid-items grid-items
                             :rooms rooms
-                            :player (make-player :x-coordinate 0 :y-coordinate 0)
+                            :player player
                             :textures (make-hash-table)
                             :tile-width 32
                             :tile-height 32))
@@ -39,38 +47,73 @@
          (player (world-player world))
          (room-start (room-get-starting-position first-room room-width room-height))
          (start-x (first room-start))
-         (start-y (second room-start)))
-    (setf (player-x-coordinate player) (+ start-x center-x))
-    (setf (player-y-coordinate player) (+ start-y center-y))
+         (start-y (second room-start))
+         (player-x (+ start-x center-x))
+         (player-y (+ start-y center-y)))
+    (move-grid-item grid-items 0 0 player-x player-y)
+    (setf (player-x-coordinate player) player-x)
+    (setf (player-y-coordinate player) player-y)
     world))
 
-(defun world-make-grid-items (world)
+(defun world-make-grid-items (grid player)
   "makes all grid items for the world"
-  (let* ((grid (world-grid world))
-         (grid-width (array-dimension grid 0))
-         (grid-height (array-dimension grid 1))
-         (grid-items (make-array (list grid-width grid-height)))
-         (player (world-player world))
-         (player-x (player-x-coordinate player))
-         (player-y (player-y-coordinate player)))
+  (let*  ((grid-width (array-dimension grid 0))
+          (grid-height (array-dimension grid 1))
+          (grid-items (make-array (list grid-width grid-height)))
+          (player-x (player-x-coordinate player))
+          (player-y (player-y-coordinate player)))
     (fill-grid grid-items nil)
     (setf (aref grid-items player-x player-y) (make-grid-item :texture-id :player))
     grid-items))
 
-(defun player-move (player x y)
+(defun world-coordinate-valid (world x y)
+  "returns true when the coordinate is within bounds of the world"
+  (let* ((grid (world-grid world))
+         (grid-width (array-dimension grid 0))
+         (grid-height (array-dimension grid 1)))
+    (and (>= x 0)
+         (>= y 0)
+         (< x grid-width)
+         (< y grid-height))))
+
+(defun world-get-grid-info (world x y)
+  "gets information about a grid coordinate"
+  (let* ((grid (world-grid world))
+         (grid-type (aref grid x y))
+         (grid-items (aref (world-grid-items world) x y)))
+    (make-grid-info :grid-type grid-type
+                    :grid-items grid-items)))
+
+(defun move-grid-item (grid-items x y new-x new-y)
+  "remove the item at x, y and replace the item in new-x, new-y with the item in x, y"
+  (let ((item (aref grid-items x y)))
+    (setf (aref grid-items x y) nil)
+    (setf (aref grid-items new-x new-y) item)))
+
+(defun grid-info-obstructs-player (grid-info)
+  "returns true when the grid-info has an item or type that doesn't allow the player to move through it"
+  (not (eq :floor (grid-info-grid-type grid-info))))
+
+(defun player-move (world x y)
   "moves the player by x and y on the grid"
-  (let ((cur-x (player-x-coordinate player))
-        (cur-y (player-y-coordinate player)))
-    (setf (player-x-coordinate player) (+ cur-x x))
-    (setf (player-y-coordinate player) (+ cur-y y))))
+  (let* ((player (world-player world))
+         (cur-x (player-x-coordinate player))
+         (cur-y (player-y-coordinate player))
+         (new-x (+ cur-x x))
+         (new-y (+ cur-y y)))
+    (when (world-coordinate-valid world new-x new-y) ;; Checks world bounds
+      (let ((grid-info (world-get-grid-info world new-x new-y)))
+        (unless (grid-info-obstructs-player grid-info)
+          (move-grid-item (world-grid-items world) cur-x cur-y new-x new-y)
+          (setf (player-x-coordinate player) new-x)
+          (setf (player-y-coordinate player) new-y))))))
 
 
 
 
 (defun render-world (world renderer x-offset y-offset)
   "renders the world to the screen with an offset in pixels"
-  (let ((grid-items (world-make-grid-items world)))
-    (render-grid world renderer x-offset y-offset grid-items)))
+    (render-grid world renderer x-offset y-offset (world-grid-items world)))
 
 
 (defun update-game (world renderer screen-width screen-height)
@@ -109,13 +152,12 @@
 
 (defun key-pressed (world scancode)
   "handles key input"
-  (let ((player (world-player world)))
-    (cond
-          ((sdl2:scancode= scancode :scancode-escape) (sdl2:push-event :quit))
-          ((sdl2:scancode= scancode :scancode-w) (player-move player 0 -1))
-          ((sdl2:scancode= scancode :scancode-s) (player-move player 0 1))
-          ((sdl2:scancode= scancode :scancode-a) (player-move player -1 0))
-          ((sdl2:scancode= scancode :scancode-d) (player-move player 1 0)))))
+  (cond
+    ((sdl2:scancode= scancode :scancode-escape) (sdl2:push-event :quit))
+    ((sdl2:scancode= scancode :scancode-w) (player-move world 0 -1))
+    ((sdl2:scancode= scancode :scancode-s) (player-move world 0 1))
+    ((sdl2:scancode= scancode :scancode-a) (player-move world -1 0))
+    ((sdl2:scancode= scancode :scancode-d) (player-move world 1 0))))
 
 (defun run-game ()
   "main entry point to run/play the game"
