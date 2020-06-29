@@ -2,7 +2,8 @@
 
 
 (defstruct grid-item
-  (texture-id nil :type symbol))
+  (texture-id nil :type symbol)
+  (obstructs-player nil :type boolean))
 
 
 (defun fill-grid (grid character)
@@ -29,12 +30,14 @@
       (setf (sdl2:rect-x dest-rect) x-offset)
       (setf (sdl2:rect-y dest-rect) (+ y-offset (* tile-height y)))
       (loop for x from 0 below grid-width do
-        (let* ((grid-item (aref grid-items x y))
+        (let* ((grid-items (aref grid-items x y))
                (grid-texture-id (aref grid x y)))
           (when grid-texture-id
               (funcall render-texture grid-texture-id))
-          (when grid-item
-              (funcall render-texture (grid-item-texture-id grid-item)))
+          (when grid-items
+            (map nil #'(lambda (grid-item)
+                         (funcall render-texture (grid-item-texture-id grid-item)))
+                 grid-items))
           (setf (sdl2:rect-x dest-rect) (+ tile-width (sdl2:rect-x dest-rect))))))))
 
 
@@ -80,19 +83,19 @@
                      (if (room-north-room room)
                          (setf (aref grid
                                      (+ start-x center-x)
-                                     (+ start-y room-height)) :horizontal-door))
+                                     (+ start-y room-height)) :floor))
                      (if (room-south-room room)
                          (setf (aref grid
                                      (+ start-x center-x)
-                                     (+ start-y -1)) :horizontal-door))
+                                     (+ start-y -1)) :floor))
                      (if (room-east-room room)
                          (setf (aref grid
                                      (+ start-x room-width)
-                                     (+ start-y center-y)) :vertical-door))
+                                     (+ start-y center-y)) :floor))
                      (if (room-west-room room)
                          (setf (aref grid
                                      (+ start-x -1)
-                                     (+ start-y center-y)) :vertical-door))
+                                     (+ start-y center-y)) :floor))
                      (if print-room-number
                          (setf (aref grid
                                      (+ start-x center-x)

@@ -32,7 +32,7 @@
   (let* ((rooms (normalize-rooms (generate-rooms number-of-rooms)))
          (grid (build-room-grid rooms room-width room-height nil))
          (player (make-player :x-coordinate 0 :y-coordinate 0))
-         (grid-items (world-make-grid-items grid player))
+         (grid-items (world-make-grid-items grid rooms room-width room-height player))
          (world (make-world :grid grid
                             :grid-items grid-items
                             :rooms rooms
@@ -50,20 +50,43 @@
          (start-y (second room-start))
          (player-x (+ start-x center-x))
          (player-y (+ start-y center-y)))
-    (move-grid-item grid-items 0 0 player-x player-y)
+    (move-grid-item grid-items :player 0 0 player-x player-y)
     (setf (player-x-coordinate player) player-x)
     (setf (player-y-coordinate player) player-y)
     world))
 
-(defun world-make-grid-items (grid player)
+(defun world-make-grid-items (grid rooms room-width room-height player)
   "makes all grid items for the world"
   (let*  ((grid-width (array-dimension grid 0))
           (grid-height (array-dimension grid 1))
           (grid-items (make-array (list grid-width grid-height)))
           (player-x (player-x-coordinate player))
           (player-y (player-y-coordinate player)))
-    (fill-grid grid-items nil)
-    (setf (aref grid-items player-x player-y) (make-grid-item :texture-id :player))
+    (fill-grid grid-items '())
+    (setf (aref grid-items player-x player-y)
+          (cons (make-grid-item :texture-id :player :obstructs-player nil) (aref grid-items player-x player-y)))
+      (map nil #'(lambda (room)
+                   (let* ((room-center (room-get-center room room-width room-height))
+                          (center-x (first room-center))
+                          (center-y (second room-center))
+                          (room-start (room-get-starting-position room room-width room-height))
+                          (start-x (first room-start))
+                          (start-y (second room-start))
+                          (add-door-to-grid-items #'(lambda (x y door-type)
+                                                      (setf (aref grid-items x y)
+                                                            (cons (make-grid-item :texture-id door-type :obstructs-player t)
+                                                                  (aref grid-items x y))))))
+                     (if (room-north-room room)
+                         (funcall add-door-to-grid-items
+                                  (+ start-x center-x)
+                                  (+ start-y room-height)
+                                  :horizontal-door))
+                     (if (room-east-room room)
+                         (funcall add-door-to-grid-items
+                                  (+ start-x room-width)
+                                  (+ start-y center-y)
+                                  :vertical-door))))
+           rooms)
     grid-items))
 
 (defun world-coordinate-valid (world x y)
@@ -84,15 +107,26 @@
     (make-grid-info :grid-type grid-type
                     :grid-items grid-items)))
 
-(defun move-grid-item (grid-items x y new-x new-y)
+(defun move-grid-item (grid-items item-type x y new-x new-y)
   "remove the item at x, y and replace the item in new-x, new-y with the item in x, y"
-  (let ((item (aref grid-items x y)))
-    (setf (aref grid-items x y) nil)
-    (setf (aref grid-items new-x new-y) item)))
+  (let ((items (aref grid-items x y)))
+    (loop for item in items
+          do (when (eq (grid-item-texture-id item) item-type)
+               (setf (aref grid-items x y)
+                     (remove item (aref grid-items x y)))
+               (setf (aref grid-items new-x new-y)
+                     (cons item (aref grid-items new-x new-y)))))))
 
 (defun grid-info-obstructs-player (grid-info)
   "returns true when the grid-info has an item or type that doesn't allow the player to move through it"
   (not (eq :floor (grid-info-grid-type grid-info))))
+
+(defun grid-items-obstruct-player (grid-items)
+  (if (eq grid-items '())
+      '()
+      (if (grid-item-obstructs-player (first grid-items))
+          t
+          (grid-items-obstruct-player (rest grid-items)))))
 
 (defun player-move (world x y)
   "moves the player by x and y on the grid"
@@ -102,13 +136,35 @@
          (new-x (+ cur-x x))
          (new-y (+ cur-y y)))
     (when (world-coordinate-valid world new-x new-y) ;; Checks world bounds
-      (let ((grid-info (world-get-grid-info world new-x new-y)))
-        (unless (grid-info-obstructs-player grid-info)
-          (move-grid-item (world-grid-items world) cur-x cur-y new-x new-y)
+      (let ((grid-info (world-get-grid-info world new-x new-y))
+            (grid-items (world-grid-items world)))
+        (unless (or (grid-info-obstructs-player grid-info)
+                    (grid-items-obstruct-player (aref grid-items new-x new-y)))
+          (move-grid-item (world-grid-items world)
+                          :player
+                          cur-x cur-y new-x new-y)
           (setf (player-x-coordinate player) new-x)
           (setf (player-y-coordinate player) new-y))))))
 
-
+(defun open-door (world)
+  "try to open a door if the player is in range of a door (max of one space away)"
+  (let* ((player (world-player world))
+         (start-x (- (player-x-coordinate player) 1))
+         (start-y (- (player-y-coordinate player) 1))
+         (do-open-door #'(lambda (x y)
+                           (let ((items (aref (world-grid-items world) x y)))
+                             (loop for item in items do
+                               (let ((item-type (grid-item-texture-id item)))
+                                 (when (or (eq item-type :horizontal-door)
+                                           (eq item-type :vertical-door))
+                                   (setf (aref (world-grid-items world) x y)
+                                         (remove item items)))))))))
+    (dotimes (y 3)
+      (dotimes (x 3)
+        (let ((cur-x (+ x start-x))
+              (cur-y (+ y start-y)))
+          (when (world-coordinate-valid world cur-x cur-y)
+            (funcall do-open-door cur-x cur-y)))))))
 
 
 (defun render-world (world renderer x-offset y-offset)
@@ -157,7 +213,8 @@
     ((sdl2:scancode= scancode :scancode-w) (player-move world 0 -1))
     ((sdl2:scancode= scancode :scancode-s) (player-move world 0 1))
     ((sdl2:scancode= scancode :scancode-a) (player-move world -1 0))
-    ((sdl2:scancode= scancode :scancode-d) (player-move world 1 0))))
+    ((sdl2:scancode= scancode :scancode-d) (player-move world 1 0))
+    ((sdl2:scancode= scancode :scancode-space) (open-door world))))
 
 (defun run-game ()
   "main entry point to run/play the game"

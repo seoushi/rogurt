@@ -5,6 +5,8 @@
 - [X] Make input work again
 - [X] Make sure the player stays in bounds when moving
 - [X] Make sure the player can not walk through walls
-- [ ] Make doors grid items
-- [ ] make doors openable by pressing space
+- [X] Make doors grid items
+- [X] make doors openable by pressing space
 - [ ] only render walls surrounding the room and not in the "open area"
+- [ ] win state. getting to the last room wins the game and pressing space will goto the next level
+- [ ] make a much bigger grid
